@@ -9,7 +9,7 @@ from scripts.properties import (
 )
 
 
-@timeout(1800)
+@timeout(3000)
 def baseline_model(cur_row: pd.Series):
     (
         TEM_type, Tchm0, Tccm0, N0, I0, eta0, aTEM, aTE, Ncoup, hTEM, mTEM,
