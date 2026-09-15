@@ -24,10 +24,13 @@ def bootstrap_calculation(api_num=API_NUM):
     results_config_lst = []
     pkl_num = 1
     params_df = pd.read_csv(input_path)
-    calc_cnt = params_df.shape[0] 
+    calc_cnt = params_df.shape[0]
     # итерирование по строкам исходных данных
     for _ in range(calc_cnt):
-        row = params_df.iloc[0]
+        if params_df.empty:
+            break
+
+        row = params_df.iloc[0].copy()
         # расчёт с адаптивным конфигурированием
         try:
             results_config_dict = baseline_model(row)
@@ -92,9 +95,8 @@ def bootstrap_calculation(api_num=API_NUM):
         results_config_lst = []
         pkl_num += 1
         # удаление отработанной строки из исходных данных
-        if params_df.shape[0] > 1:
-            params_df = params_df.iloc[1:].reset_index(drop=True)
-            params_df.to_csv(input_path, index=False)
+        params_df = params_df.iloc[1:].reset_index(drop=True)
+        params_df.to_csv(input_path, index=False)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,6 @@
     project_dir: /opt/baseline_model
     reset_state: true
     run_tag: "local"
-    seed_base: "0"
 
   tasks:
     - name: Ensure project directory exists
@@ -16,7 +15,6 @@
         owner: ubuntu
         group: ubuntu
         mode: "0755"
-      become: true
 
     - name: Copy project to VM
       ansible.posix.synchronize:
@@ -34,7 +32,6 @@
           - "--exclude=terraform.tfstate.backup"
           - "--exclude=terraform.tfvars"
       become: false
-      tags: setup
 
     - name: Stop existing containers and remove state for clean deployment
       shell: |
@@ -42,7 +39,6 @@
         docker-compose down -v --remove-orphans || true
       when: reset_state | bool
       changed_when: true
-      tags: setup
 
     - name: Wait for Docker daemon to be ready
       shell: docker info
@@ -51,14 +47,12 @@
       retries: 30
       delay: 10
       changed_when: false
-      tags: setup
 
     - name: Start docker-compose services
       shell: |
         cd {{ project_dir }}
         docker-compose up -d --build
       changed_when: true
-      tags: setup
 
     - name: Wait for API 1 health
       uri:
@@ -69,7 +63,6 @@
       until: api1_health.status == 200
       retries: 30
       delay: 10
-      tags: setup
 
     - name: Wait for API 2 health
       uri:
@@ -80,7 +73,6 @@
       until: api2_health.status == 200
       retries: 30
       delay: 10
-      tags: setup
 
     - name: Wait for API 3 health
       uri:
@@ -91,7 +83,6 @@
       until: api3_health.status == 200
       retries: 30
       delay: 10
-      tags: setup
 
     - name: Wait for API 4 health
       uri:
@@ -102,7 +93,6 @@
       until: api4_health.status == 200
       retries: 30
       delay: 10
-      tags: setup
 
     - name: Wait for API 5 health
       uri:
@@ -113,7 +103,6 @@
       until: api5_health.status == 200
       retries: 30
       delay: 10
-      tags: setup
 
     - name: Wait for API 6 health
       uri:
@@ -124,7 +113,14 @@
       until: api6_health.status == 200
       retries: 30
       delay: 10
-      tags: setup
+
+    - name: Redistribute params CSV files before bootstrap
+      shell: |
+        set -e
+        cd {{ project_dir }}
+        docker-compose exec -T api_1 python -m scripts.params_distribution
+      register: params_distribution_result
+      changed_when: params_distribution_result.rc == 0
 
     - name: Run bootstrap calculations in parallel
       block:
@@ -157,7 +153,7 @@
           register: bootstrap_result
           changed_when: bootstrap_result.rc == 0
           failed_when: bootstrap_result.rc != 0
-          timeout: 21000
+          timeout: 20700
 
       rescue:
         - name: Show bootstrap failure details
@@ -183,10 +179,10 @@
       debug:
         var: output_files.stdout_lines
 
-    - name: Archive results
+    - name: Archive results and updated input files
       shell: |
         cd {{ project_dir }}
-        tar -czf /tmp/baseline_model_results.tar.gz artifacts/data_output
+        tar -czf /tmp/baseline_model_results.tar.gz artifacts/data_output artifacts/data_input
       changed_when: true
 
     - name: Fetch results archive to runner

@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   # ═══════════════════════════════════════════════════════════════
-  # JOB 1: Terraform Apply + первый расчёт (полный playbook, включая setup)
+  # JOB 1: Terraform Apply + первый расчёт
   # ═══════════════════════════════════════════════════════════════
   deploy_run_1:
     name: Deploy run 1
@@ -27,10 +27,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Sync repository before deploy
+        run: |
+          set -e
+          git fetch origin "${GITHUB_REF_NAME}"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+
       - name: Prepare run variables
         run: |
           echo "RUN_TAG=run_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_1" >> $GITHUB_ENV
-          echo "SEED_BASE=$((GITHUB_RUN_ID + GITHUB_RUN_ATTEMPT))" >> $GITHUB_ENV
 
       - name: Install system packages
         run: |
@@ -136,13 +141,7 @@ jobs:
 
       - name: Run Ansible deploy (full — includes setup)
         run: |
-          ansible-playbook -i infra/ansible/inventory/production/hosts.ini infra/ansible/playbooks/deploy.yml --extra-vars "run_tag=${RUN_TAG} seed_base=${SEED_BASE}"
-
-      - name: Sync repository before copying results
-        run: |
-          set -e
-          git fetch origin "${GITHUB_REF_NAME}"
-          git pull --rebase origin "${GITHUB_REF_NAME}"
+          ansible-playbook -i infra/ansible/inventory/production/hosts.ini infra/ansible/playbooks/deploy.yml --extra-vars "run_tag=${RUN_TAG}"
 
       - name: Unpack results archive
         run: |
@@ -150,30 +149,34 @@ jobs:
           mkdir -p /tmp/results_unpack
           tar -xzf /tmp/baseline_model_results.tar.gz -C /tmp/results_unpack
 
-      - name: Copy results into repository
+      - name: Copy results and updated input into repository
         run: |
-          mkdir -p artifacts/data_output
-          rsync -a /tmp/results_unpack/artifacts/data_output/ artifacts/data_output/
+          mkdir -p artifacts/data_output artifacts/data_input
+          rsync -a --delete /tmp/results_unpack/artifacts/data_output/ artifacts/data_output/
+          rsync -a --delete /tmp/results_unpack/artifacts/data_input/ artifacts/data_input/
 
       - name: Show result files
         run: |
+          echo "=== OUTPUT ==="
           find artifacts/data_output -type f | sort
+          echo "=== INPUT ==="
+          find artifacts/data_input -type f | sort
 
-      - name: Commit results
+      - name: Commit results and updated input
         run: |
           set -e
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
-          git add artifacts/data_output
+          git add artifacts/data_output artifacts/data_input
           if git diff --cached --quiet; then
             echo "No changes"
           else
-            git commit -m "Add batch calculation results [${RUN_TAG}]"
+            git commit -m "Add batch calculation results and update input [${RUN_TAG}]"
             git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
 
   # ═══════════════════════════════════════════════════════════════
-  # JOB 2: Второй расчёт (skip setup — контейнеры уже работают)
+  # JOB 2: Второй расчёт
   # ═══════════════════════════════════════════════════════════════
   deploy_run_2:
     name: Deploy run 2
@@ -188,10 +191,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Sync repository before deploy
+        run: |
+          set -e
+          git fetch origin "${GITHUB_REF_NAME}"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+
       - name: Prepare run variables
         run: |
           echo "RUN_TAG=run_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_2" >> $GITHUB_ENV
-          echo "SEED_BASE=$((GITHUB_RUN_ID + GITHUB_RUN_ATTEMPT + 1000))" >> $GITHUB_ENV
 
       - name: Install system packages
         run: |
@@ -251,15 +259,9 @@ jobs:
           ${{ steps.vm-ip.outputs.VM_IP }} ansible_user=ubuntu ansible_ssh_private_key_file=/home/runner/.ssh/baseline_model_id_rsa ansible_ssh_common_args="-o ServerAliveInterval=10 -o ServerAliveCountMax=2160"
           EOF
 
-      - name: Run Ansible deploy (skip setup — containers already running)
+      - name: Run Ansible deploy (full — includes setup)
         run: |
-          ansible-playbook -i infra/ansible/inventory/production/hosts.ini infra/ansible/playbooks/deploy.yml --extra-vars "run_tag=${RUN_TAG} seed_base=${SEED_BASE}" --skip-tags "setup"
-
-      - name: Sync repository before copying results
-        run: |
-          set -e
-          git fetch origin "${GITHUB_REF_NAME}"
-          git pull --rebase origin "${GITHUB_REF_NAME}"
+          ansible-playbook -i infra/ansible/inventory/production/hosts.ini infra/ansible/playbooks/deploy.yml --extra-vars "run_tag=${RUN_TAG}"
 
       - name: Unpack results archive
         run: |
@@ -267,30 +269,34 @@ jobs:
           mkdir -p /tmp/results_unpack
           tar -xzf /tmp/baseline_model_results.tar.gz -C /tmp/results_unpack
 
-      - name: Copy results into repository
+      - name: Copy results and updated input into repository
         run: |
-          mkdir -p artifacts/data_output
-          rsync -a /tmp/results_unpack/artifacts/data_output/ artifacts/data_output/
+          mkdir -p artifacts/data_output artifacts/data_input
+          rsync -a --delete /tmp/results_unpack/artifacts/data_output/ artifacts/data_output/
+          rsync -a --delete /tmp/results_unpack/artifacts/data_input/ artifacts/data_input/
 
       - name: Show result files
         run: |
+          echo "=== OUTPUT ==="
           find artifacts/data_output -type f | sort
+          echo "=== INPUT ==="
+          find artifacts/data_input -type f | sort
 
       - name: Commit results
         run: |
           set -e
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
-          git add artifacts/data_output
+          git add artifacts/data_output artifacts/data_input
           if git diff --cached --quiet; then
             echo "No changes"
           else
-            git commit -m "Add batch calculation results [${RUN_TAG}]"
+            git commit -m "Add batch calculation results and update input [${RUN_TAG}]"
             git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
 
   # ═══════════════════════════════════════════════════════════════
-  # JOB 3: Третий расчёт (skip setup — контейнеры уже работают)
+  # JOB 3: Третий расчёт
   # ═══════════════════════════════════════════════════════════════
   deploy_run_3:
     name: Deploy run 3
@@ -305,10 +311,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Sync repository before deploy
+        run: |
+          set -e
+          git fetch origin "${GITHUB_REF_NAME}"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+
       - name: Prepare run variables
         run: |
           echo "RUN_TAG=run_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_3" >> $GITHUB_ENV
-          echo "SEED_BASE=$((GITHUB_RUN_ID + GITHUB_RUN_ATTEMPT + 2000))" >> $GITHUB_ENV
 
       - name: Install system packages
         run: |
@@ -368,15 +379,9 @@ jobs:
           ${{ steps.vm-ip.outputs.VM_IP }} ansible_user=ubuntu ansible_ssh_private_key_file=/home/runner/.ssh/baseline_model_id_rsa ansible_ssh_common_args="-o ServerAliveInterval=10 -o ServerAliveCountMax=2160"
           EOF
 
-      - name: Run Ansible deploy (skip setup — containers already running)
+      - name: Run Ansible deploy (full — includes setup)
         run: |
-          ansible-playbook -i infra/ansible/inventory/production/hosts.ini infra/ansible/playbooks/deploy.yml --extra-vars "run_tag=${RUN_TAG} seed_base=${SEED_BASE}" --skip-tags "setup"
-
-      - name: Sync repository before copying results
-        run: |
-          set -e
-          git fetch origin "${GITHUB_REF_NAME}"
-          git pull --rebase origin "${GITHUB_REF_NAME}"
+          ansible-playbook -i infra/ansible/inventory/production/hosts.ini infra/ansible/playbooks/deploy.yml --extra-vars "run_tag=${RUN_TAG}"
 
       - name: Unpack results archive
         run: |
@@ -384,25 +389,29 @@ jobs:
           mkdir -p /tmp/results_unpack
           tar -xzf /tmp/baseline_model_results.tar.gz -C /tmp/results_unpack
 
-      - name: Copy results into repository
+      - name: Copy results and updated input into repository
         run: |
-          mkdir -p artifacts/data_output
-          rsync -a /tmp/results_unpack/artifacts/data_output/ artifacts/data_output/
+          mkdir -p artifacts/data_output artifacts/data_input
+          rsync -a --delete /tmp/results_unpack/artifacts/data_output/ artifacts/data_output/
+          rsync -a --delete /tmp/results_unpack/artifacts/data_input/ artifacts/data_input/
 
       - name: Show result files
         run: |
+          echo "=== OUTPUT ==="
           find artifacts/data_output -type f | sort
+          echo "=== INPUT ==="
+          find artifacts/data_input -type f | sort
 
       - name: Commit results
         run: |
           set -e
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
-          git add artifacts/data_output
+          git add artifacts/data_output artifacts/data_input
           if git diff --cached --quiet; then
             echo "No changes"
           else
-            git commit -m "Add batch calculation results [${RUN_TAG}]"
+            git commit -m "Add batch calculation results and update input [${RUN_TAG}]"
             git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
 
